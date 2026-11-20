@@ -4,9 +4,14 @@
   const ROUNDS = 5;
   const MIN_WORDS = 100;
   const MAX_WORDS = 200;
-  // Points fall off as 100 * e^(-d / DECAY), d = verses between guess and passage.
-  // 30 verses off ≈ 93, 100 ≈ 78, 400 ≈ 37, 1000 ≈ 8.
-  const DECAY = 400;
+  // Points follow a stretched exponential, 100 * e^(-(d / CURVE_SCALE)^CURVE_SHAPE), where
+  // d = verses between guess and passage. A shape below 1 softens the drop and lengthens the tail:
+  // 30 verses off ≈ 93, 100 ≈ 84, 300 ≈ 65, 1000 ≈ 32, 3000 ≈ 7.
+  const CURVE_SCALE = 900;
+  const CURVE_SHAPE = 0.8;
+  // Landing in the right chapter or book guarantees at least this much
+  const SAME_CHAPTER_FLOOR = 90;
+  const SAME_BOOK_FLOOR = 70;
   const EPOCH = Date.UTC(2026, 10, 20); // puzzle #1
   const STORAGE_PREFIX = "bomtap:v2:"; // bump when the daily passage picker changes
 
@@ -161,7 +166,13 @@
 
   const distance = (guess, ex) =>
     guess < ex.start ? ex.start - guess : guess > ex.end ? guess - ex.end : 0;
-  const pointsFor = (d) => Math.round(100 * Math.exp(-d / DECAY));
+  const sameChapter = (guess, ex) => chapterRange(guess)[0] === chapterRange(ex.start)[0];
+  const sameBook = (guess, ex) => verses[guess].b === verses[ex.start].b;
+  function pointsFor(guess, ex) {
+    const curve = 100 * Math.exp(-((distance(guess, ex) / CURVE_SCALE) ** CURVE_SHAPE));
+    const floor = sameChapter(guess, ex) ? SAME_CHAPTER_FLOOR : sameBook(guess, ex) ? SAME_BOOK_FLOOR : 0;
+    return Math.round(Math.max(curve, floor));
+  }
   const emojiFor = (p) => (p === 100 ? "🎯" : p >= 80 ? "🟩" : p >= 50 ? "🟨" : p >= 20 ? "🟧" : "🟥");
 
   // ---------- Dates & storage ----------
@@ -533,7 +544,7 @@
     if (state.guess === null || state.revealed) return;
     const ex = state.excerpts[state.guesses.length];
     const d = distance(state.guess, ex);
-    const points = pointsFor(d);
+    const points = pointsFor(state.guess, ex);
     state.guesses.push({ guess: state.guess, distance: d, points });
     state.revealed = true;
     if (state.mode === "daily") save(state.dateKey, state.guesses);
@@ -557,12 +568,12 @@
     el.readoutRef.textContent = rangeRef(ex.start, ex.end);
     el.result.hidden = false;
     el.resultPoints.textContent = `${emojiFor(g.points)} ${g.points}`;
-    const sameChapter = chapterRange(g.guess)[0] === chapterRange(ex.start)[0];
+    const near = sameChapter(g.guess, ex) ? " (right chapter)" : sameBook(g.guess, ex) ? " (right book)" : "";
     el.resultDetail.innerHTML = "";
     el.resultDetail.append(`You guessed ${ref(g.guess)} — `);
     const strong = document.createElement("strong");
     strong.textContent = g.distance === 0 ? "right on it!"
-      : `${g.distance.toLocaleString()} verse${g.distance === 1 ? "" : "s"} away${sameChapter ? " (right chapter)" : ""}`;
+      : `${g.distance.toLocaleString()} verse${g.distance === 1 ? "" : "s"} away${near}`;
     el.resultDetail.append(strong);
 
     el.guessBtn.hidden = true;
