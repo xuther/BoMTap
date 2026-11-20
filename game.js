@@ -8,7 +8,7 @@
   // 30 verses off ≈ 93, 100 ≈ 78, 400 ≈ 37, 1000 ≈ 8.
   const DECAY = 400;
   const EPOCH = Date.UTC(2026, 10, 20); // puzzle #1
-  const STORAGE_PREFIX = "bomtap:";
+  const STORAGE_PREFIX = "bomtap:v2:"; // bump when the daily passage picker changes
 
   const ABBR = {
     "1 Nephi": "1 Ne", "2 Nephi": "2 Ne", "Jacob": "Jacob", "Enos": "Enos", "Jarom": "Jarom",
@@ -84,16 +84,79 @@
     return { start, end: shownEnd, paras };
   }
 
+  // ---------- Difficulty ramp: one passage per tier, easiest first ----------
+
+  // Doctrinal / Scripture Mastery verses; the passage starts at the verse
+  const MASTERY = [
+    "1 Nephi 3:7", "1 Nephi 19:23", "2 Nephi 2:25", "2 Nephi 2:27", "2 Nephi 9:28", "2 Nephi 25:23",
+    "2 Nephi 26:33", "2 Nephi 28:30", "2 Nephi 31:19", "2 Nephi 32:3", "2 Nephi 32:8", "Mosiah 2:17",
+    "Mosiah 2:41", "Mosiah 3:19", "Mosiah 4:9", "Mosiah 4:30", "Mosiah 18:8", "Alma 7:11", "Alma 32:21",
+    "Alma 34:9", "Alma 34:32", "Alma 37:6", "Alma 37:35", "Alma 39:9", "Alma 41:10", "Helaman 5:12",
+    "3 Nephi 11:10", "3 Nephi 12:48", "3 Nephi 18:15", "3 Nephi 27:20", "Ether 12:6", "Ether 12:27",
+    "Moroni 7:16", "Moroni 7:45", "Moroni 10:4", "Moroni 10:32",
+  ];
+  // Chapters with well-known stories or sermons
+  const FAMOUS = [
+    "1 Nephi 1", "1 Nephi 3", "1 Nephi 4", "1 Nephi 8", "1 Nephi 11", "1 Nephi 16", "1 Nephi 17", "1 Nephi 18",
+    "2 Nephi 2", "2 Nephi 4", "2 Nephi 5", "Jacob 5", "Jacob 7", "Enos 1", "Mosiah 2", "Mosiah 3", "Mosiah 4",
+    "Mosiah 5", "Mosiah 12", "Mosiah 17", "Mosiah 18", "Mosiah 24", "Mosiah 27", "Alma 5", "Alma 14", "Alma 17",
+    "Alma 18", "Alma 19", "Alma 24", "Alma 30", "Alma 32", "Alma 36", "Alma 46", "Alma 53", "Alma 56", "Alma 57",
+    "Helaman 5", "Helaman 13", "Helaman 16", "3 Nephi 1", "3 Nephi 8", "3 Nephi 11", "3 Nephi 17", "3 Nephi 19",
+    "Ether 2", "Ether 3", "Ether 12", "Mormon 9", "Moroni 7", "Moroni 10",
+  ];
+  // People and places are the biggest clues, so later rounds allow fewer of them
+  const NAMES = new RegExp("\\b(?:" + [
+    "Nephi", "Lehi", "Laman", "Lemuel", "Sam", "Sariah", "Laban", "Zoram", "Ishmael", "Jacob", "Joseph",
+    "Sherem", "Enos", "Jarom", "Omni", "Amaleki", "Mosiah", "Benjamin", "Zeniff", "Noah", "Abinadi", "Alma",
+    "Limhi", "Ammon", "Aaron", "Omner", "Himni", "Gideon", "Amulek", "Zeezrom", "Korihor", "Moroni",
+    "Moronihah", "Teancum", "Lehonti", "Helaman", "Shiblon", "Corianton", "Pahoran", "Amalickiah", "Ammoron",
+    "Zerahemnah", "Nehor", "Amlici", "Lamoni", "Abish", "Antipus", "Lachoneus", "Gidgiddoni", "Giddianhi",
+    "Zemnarihah", "Gadianton", "Kishkumen", "Samuel", "Nephihah", "Mormon", "Ether", "Coriantumr", "Shiz",
+    "Jared", "Mahonri", "Moriancumer", "Orihah", "Riplakish", "Akish", "Omer", "Zarahemla", "Bountiful",
+    "Jershon", "Manti", "Antionum", "Ammonihah", "Sidom", "Melek", "Cumorah", "Ramah", "Desolation", "Shilom",
+    "Shemlon", "Helam", "Amulon", "Amalekites", "Zoramites", "Mulek", "Isaiah", "Zenos", "Zenock", "Neum",
+    "Ezias", "Jerusalem", "Egypt", "Moses", "Abraham", "Isaac", "Israel", "Babylon", "Pharaoh",
+  ].join("|") + ")\\b", "g");
+
+  const verseAt = (r) => {
+    const [, name, c, v] = r.match(/^(.+) (\d+)(?::(\d+))?$/);
+    return books.find((b) => b.name === name).chStart[c - 1] + (v ? v - 1 : 0);
+  };
+  const masteryVerses = MASTERY.map(verseAt);
+  const famousChapters = FAMOUS.map(verseAt);
+  const famousSet = new Set(famousChapters);
+  const nameCount = (ex) => new Set(ex.paras.join(" ").match(NAMES)).size;
+  const pickFrom = (rng, list) => list[Math.floor(rng() * list.length)];
+  const randomVerse = (rng) => Math.floor(rng() * N);
+  const obscure = (g) => !famousSet.has(chapterRange(g)[0]);
+
+  const TIERS = [
+    { label: "Scripture Mastery", verse: (rng) => pickFrom(rng, masteryVerses) },
+    {
+      label: "Well-known story",
+      verse: (rng) => {
+        const [s, e] = chapterRange(pickFrom(rng, famousChapters));
+        return s + Math.floor(rng() * (e - s + 1));
+      },
+    },
+    { label: "Moderate", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) >= 2 },
+    { label: "Hard", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) <= 1 },
+    { label: "Deep cut", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) === 0 },
+  ];
+
   function pickExcerpts(rng) {
-    const out = [], usedChapters = new Set();
-    while (out.length < ROUNDS) {
-      const g = Math.floor(rng() * N);
-      const key = chapterRange(g)[0];
-      if (usedChapters.has(key)) continue;
-      usedChapters.add(key);
-      out.push(makeExcerpt(g));
-    }
-    return out;
+    const usedChapters = new Set();
+    return TIERS.map((tier) => {
+      for (;;) {
+        const g = tier.verse(rng);
+        const key = chapterRange(g)[0];
+        if (usedChapters.has(key)) continue;
+        const ex = makeExcerpt(g);
+        if (tier.ok && !tier.ok(g, ex)) continue;
+        usedChapters.add(key);
+        return { ...ex, tier: tier.label };
+      }
+    });
   }
 
   const distance = (guess, ex) =>
@@ -128,7 +191,7 @@
   const el = {
     intro: $("intro"), round: $("round"), summary: $("summary"),
     dayLabel: $("day-label"), roundLabel: $("round-label"), scoreLabel: $("score-label"),
-    passage: $("passage"), readoutLabel: $("readout-label"), readoutRef: $("readout-ref"),
+    tier: $("tier"), passage: $("passage"), readoutLabel: $("readout-label"), readoutRef: $("readout-ref"),
     overview: $("overview"), ovBooks: $("ov-books"), ovView: $("ov-view"), ovGuess: $("ov-guess"),
     ovAnswer: $("ov-answer"), tape: $("tape"), tapeCanvas: $("tape-canvas"), needle: $("needle"), hint: $("hint"),
     pickers: $("pickers"), pickBook: $("pick-book"), pickChapter: $("pick-chapter"), pickVerse: $("pick-verse"),
@@ -442,6 +505,7 @@
       return p;
     }));
     el.passage.scrollTop = 0;
+    el.tier.textContent = ex.tier;
 
     el.readoutLabel.textContent = "Your guess";
     el.readoutRef.textContent = "Slide to choose";
@@ -521,7 +585,7 @@
       pts.textContent = `${emojiFor(g.points)} ${g.points}`;
       const sub = document.createElement("div");
       sub.className = "sub";
-      sub.textContent = `${rangeRef(ex.start, ex.end)} · you guessed ${ref(g.guess)}`;
+      sub.textContent = `${ex.tier} · ${rangeRef(ex.start, ex.end)} · you guessed ${ref(g.guess)}`;
       li.append(pts, ` — ${g.distance === 0 ? "exact" : `${g.distance.toLocaleString()} verses off`}`, sub);
       return li;
     }));
