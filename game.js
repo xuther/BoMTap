@@ -14,7 +14,7 @@
   const SAME_CHAPTER_FLOOR = 90;
   const SAME_BOOK_FLOOR = 70;
   const EPOCH = Date.UTC(2026, 10, 20); // puzzle #1
-  const STORAGE_PREFIX = "bomtap:v2:"; // bump when the daily passage picker changes
+  const STORAGE_PREFIX = "bomtap:v3:"; // bump when the daily passage picker changes
 
   const ABBR = {
     "1 Nephi": "1 Ne", "2 Nephi": "2 Ne", "Jacob": "Jacob", "Enos": "Enos", "Jarom": "Jarom",
@@ -71,14 +71,18 @@
     };
   }
 
-  // Grow a passage around verse g until it has MIN_WORDS, staying inside the chapter,
-  // then cut the displayed text at MAX_WORDS.
-  function makeExcerpt(g) {
+  // Grow a passage around verse g until it has MIN_WORDS, staying inside the chapter.
+  function passageRange(g) {
     const [cs, ce] = chapterRange(g);
     let start = g, end = g, count = words(g).length;
     while (count < MIN_WORDS && end < ce) count += words(++end).length;
     while (count < MIN_WORDS && start > cs) count += words(--start).length;
+    return [start, end];
+  }
 
+  // The passage for verse g, with the displayed text cut at MAX_WORDS
+  function makeExcerpt(g) {
+    const [start, end] = passageRange(g);
     const paras = [];
     let budget = MAX_WORDS, shownEnd = start;
     for (let i = start; i <= end && budget > 0; i++) {
@@ -91,8 +95,9 @@
   }
 
   // ---------- Difficulty ramp: one passage per tier, easiest first ----------
+  // Fame comes from how often General Conference talks cite each verse (data/fame.js).
 
-  // Doctrinal / Scripture Mastery verses; the passage starts at the verse
+  // Doctrinal / Scripture Mastery verses join the most-cited verses in the first round's pool
   const MASTERY = [
     "1 Nephi 3:7", "1 Nephi 19:23", "2 Nephi 2:25", "2 Nephi 2:27", "2 Nephi 9:28", "2 Nephi 25:23",
     "2 Nephi 26:33", "2 Nephi 28:30", "2 Nephi 31:19", "2 Nephi 32:3", "2 Nephi 32:8", "Mosiah 2:17",
@@ -101,53 +106,38 @@
     "3 Nephi 11:10", "3 Nephi 12:48", "3 Nephi 18:15", "3 Nephi 27:20", "Ether 12:6", "Ether 12:27",
     "Moroni 7:16", "Moroni 7:45", "Moroni 10:4", "Moroni 10:32",
   ];
-  // Chapters with well-known stories or sermons
-  const FAMOUS = [
-    "1 Nephi 1", "1 Nephi 3", "1 Nephi 4", "1 Nephi 8", "1 Nephi 11", "1 Nephi 16", "1 Nephi 17", "1 Nephi 18",
-    "2 Nephi 2", "2 Nephi 4", "2 Nephi 5", "Jacob 5", "Jacob 7", "Enos 1", "Mosiah 2", "Mosiah 3", "Mosiah 4",
-    "Mosiah 5", "Mosiah 12", "Mosiah 17", "Mosiah 18", "Mosiah 24", "Mosiah 27", "Alma 5", "Alma 14", "Alma 17",
-    "Alma 18", "Alma 19", "Alma 24", "Alma 30", "Alma 32", "Alma 36", "Alma 46", "Alma 53", "Alma 56", "Alma 57",
-    "Helaman 5", "Helaman 13", "Helaman 16", "3 Nephi 1", "3 Nephi 8", "3 Nephi 11", "3 Nephi 17", "3 Nephi 19",
-    "Ether 2", "Ether 3", "Ether 12", "Mormon 9", "Moroni 7", "Moroni 10",
-  ];
-  // People and places are the biggest clues, so later rounds allow fewer of them
-  const NAMES = new RegExp("\\b(?:" + [
-    "Nephi", "Lehi", "Laman", "Lemuel", "Sam", "Sariah", "Laban", "Zoram", "Ishmael", "Jacob", "Joseph",
-    "Sherem", "Enos", "Jarom", "Omni", "Amaleki", "Mosiah", "Benjamin", "Zeniff", "Noah", "Abinadi", "Alma",
-    "Limhi", "Ammon", "Aaron", "Omner", "Himni", "Gideon", "Amulek", "Zeezrom", "Korihor", "Moroni",
-    "Moronihah", "Teancum", "Lehonti", "Helaman", "Shiblon", "Corianton", "Pahoran", "Amalickiah", "Ammoron",
-    "Zerahemnah", "Nehor", "Amlici", "Lamoni", "Abish", "Antipus", "Lachoneus", "Gidgiddoni", "Giddianhi",
-    "Zemnarihah", "Gadianton", "Kishkumen", "Samuel", "Nephihah", "Mormon", "Ether", "Coriantumr", "Shiz",
-    "Jared", "Mahonri", "Moriancumer", "Orihah", "Riplakish", "Akish", "Omer", "Zarahemla", "Bountiful",
-    "Jershon", "Manti", "Antionum", "Ammonihah", "Sidom", "Melek", "Cumorah", "Ramah", "Desolation", "Shilom",
-    "Shemlon", "Helam", "Amulon", "Amalekites", "Zoramites", "Mulek", "Isaiah", "Zenos", "Zenock", "Neum",
-    "Ezias", "Jerusalem", "Egypt", "Moses", "Abraham", "Isaac", "Israel", "Babylon", "Pharaoh",
-  ].join("|") + ")\\b", "g");
+  const TOP_CITED = 50;
 
+  const cites = window.BOM_CITES;
   const verseAt = (r) => {
-    const [, name, c, v] = r.match(/^(.+) (\d+)(?::(\d+))?$/);
-    return books.find((b) => b.name === name).chStart[c - 1] + (v ? v - 1 : 0);
+    const [, name, c, v] = r.match(/^(.+) (\d+):(\d+)$/);
+    return books.find((b) => b.name === name).chStart[c - 1] + (v - 1);
   };
-  const masteryVerses = MASTERY.map(verseAt);
-  const famousChapters = FAMOUS.map(verseAt);
-  const famousSet = new Set(famousChapters);
-  const nameCount = (ex) => new Set(ex.paras.join(" ").match(NAMES)).size;
+  const sum = (a, b) => cites.slice(a, b + 1).reduce((t, x) => t + x, 0);
+
+  // A passage is as famous as its most-cited verse, nudged by how cited the passage and its
+  // chapter are overall (which also orders the many passages nobody quotes)
+  function fame(g) {
+    const [s, e] = passageRange(g), [cs, ce] = chapterRange(g);
+    const peak = Math.max(...cites.slice(s, e + 1));
+    return peak + (0.5 * sum(s, e)) / (e - s + 1) + (0.1 * sum(cs, ce)) / (ce - cs + 1);
+  }
+  const byFame = verses.map((_, g) => [g, fame(g)]).sort((a, b) => b[1] - a[1]).map(([g]) => g);
+
+  const classics = [...new Set([
+    ...verses.map((_, g) => g).sort((a, b) => cites[b] - cites[a]).slice(0, TOP_CITED),
+    ...MASTERY.map(verseAt),
+  ])];
   const pickFrom = (rng, list) => list[Math.floor(rng() * list.length)];
-  const randomVerse = (rng) => Math.floor(rng() * N);
-  const obscure = (g) => !famousSet.has(chapterRange(g)[0]);
+  // A random passage start from a band of the fame ranking, as fractions from most to least famous
+  const band = (lo, hi) => (rng) => byFame[Math.floor((lo + rng() * (hi - lo)) * N)];
 
   const TIERS = [
-    { label: "Scripture Mastery", verse: (rng) => pickFrom(rng, masteryVerses) },
-    {
-      label: "Well-known story",
-      verse: (rng) => {
-        const [s, e] = chapterRange(pickFrom(rng, famousChapters));
-        return s + Math.floor(rng() * (e - s + 1));
-      },
-    },
-    { label: "Moderate", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) >= 2 },
-    { label: "Hard", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) <= 1 },
-    { label: "Deep cut", verse: randomVerse, ok: (g, ex) => obscure(g) && nameCount(ex) === 0 },
+    { label: "Well-known verse", verse: (rng) => pickFrom(rng, classics) },
+    { label: "Familiar", verse: band(0.03, 0.12) },
+    { label: "Moderate", verse: band(0.12, 0.35) },
+    { label: "Hard", verse: band(0.35, 0.65) },
+    { label: "Deep cut", verse: band(0.75, 1) },
   ];
 
   function pickExcerpts(rng) {
@@ -157,10 +147,8 @@
         const g = tier.verse(rng);
         const key = chapterRange(g)[0];
         if (usedChapters.has(key)) continue;
-        const ex = makeExcerpt(g);
-        if (tier.ok && !tier.ok(g, ex)) continue;
         usedChapters.add(key);
-        return { ...ex, tier: tier.label };
+        return { ...makeExcerpt(g), tier: tier.label };
       }
     });
   }
