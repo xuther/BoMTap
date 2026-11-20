@@ -6,8 +6,9 @@
   const MAX_WORDS = 200;
   // Points follow a stretched exponential, 100 * e^(-(d / CURVE_SCALE)^CURVE_SHAPE), where
   // d = verses between guess and passage. A shape below 1 softens the drop and lengthens the tail:
-  // 30 verses off ≈ 93, 100 ≈ 84, 300 ≈ 65, 1000 ≈ 32, 3000 ≈ 7.
-  const CURVE_SCALE = 900;
+  // Tuned so 75% of the book (~4,950 of 6,604 verses) off scores 7:
+  // 30 verses off ≈ 96, 100 ≈ 89, 300 ≈ 75, 1000 ≈ 48, 3000 ≈ 17, 4950 ≈ 7.
+  const CURVE_SCALE = 1460;
   const CURVE_SHAPE = 0.8;
   // Landing in the right chapter or book guarantees at least this much
   const SAME_CHAPTER_FLOOR = 90;
