@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BoM Tap</title>
+  <meta name="description" content="A daily Book of Mormon guessing game: read a passage, slide the timeline to where it falls.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>BoM&nbsp;Tap</h1>
+    <div class="meta">
+      <span id="day-label"></span>
+      <span id="round-label"></span>
+      <span id="score-label"></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Intro -->
+    <section id="intro" class="panel" hidden>
+      <p class="lead">Read a passage from the Book of Mormon, then slide the timeline to where you think it comes from.</p>
+      <ul class="rules">
+        <li>5 passages a day, the same for everyone.</li>
+        <li>Up to 100 points each. Land anywhere inside the passage for a perfect score.</li>
+        <li>Drag the timeline under the needle, or tap the top bar to jump around the book.</li>
+      </ul>
+      <button id="start-btn" class="primary">Play today's 5</button>
+    </section>
+
+    <!-- Round -->
+    <section id="round" hidden>
+      <article id="passage" class="passage"></article>
+
+      <div class="guess-area">
+        <div class="readout">
+          <span class="readout-label" id="readout-label">Your guess</span>
+          <span class="readout-ref" id="readout-ref">Slide to choose</span>
+        </div>
+
+        <!-- Whole book at a glance: tap or drag to jump -->
+        <div id="overview" class="overview" aria-hidden="true">
+          <div id="ov-books" class="ov-books"></div>
+          <div id="ov-answer" class="ov-answer" hidden></div>
+          <div id="ov-view" class="ov-view"></div>
+          <div id="ov-guess" class="ov-guess" hidden></div>
+        </div>
+
+        <!-- Zoomed tape: drag it under the fixed needle -->
+        <div id="tape" class="tape" role="slider" tabindex="0" aria-label="Guess position"
+             aria-valuemin="0" aria-valuenow="0">
+          <canvas id="tape-canvas"></canvas>
+          <div id="needle" class="needle"></div>
+        </div>
+        <p class="hint" id="hint">Slide the timeline · tap the top bar to jump</p>
+
+        <div class="pickers" id="pickers">
+          <button class="step" data-step="-1" aria-label="Previous verse">&#8249;</button>
+          <select id="pick-book" aria-label="Book"></select>
+          <select id="pick-chapter" aria-label="Chapter"></select>
+          <select id="pick-verse" aria-label="Verse"></select>
+          <button class="step" data-step="1" aria-label="Next verse">&#8250;</button>
+        </div>
+
+        <div id="result" class="result" hidden>
+          <div class="points" id="result-points"></div>
+          <div class="result-detail" id="result-detail"></div>
+        </div>
+
+        <button id="guess-btn" class="primary" disabled>Lock in guess</button>
+        <button id="next-btn" class="primary" hidden>Next passage</button>
+      </div>
+    </section>
+
+    <!-- Summary -->
+    <section id="summary" class="panel" hidden>
+      <h2 id="summary-title"></h2>
+      <div class="total" id="summary-total"></div>
+      <ol class="summary-list" id="summary-list"></ol>
+      <div class="actions">
+        <button id="share-btn" class="primary">Copy result</button>
+        <button id="practice-btn">Practice round</button>
+      </div>
+      <p class="next-in" id="next-in"></p>
+    </section>
+  </main>
+
+  <script src="data/bom.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
